@@ -321,6 +321,12 @@ def main():
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
+    """ 
+    parser는 위에서 작성한 @dataclass의 arguments를 채우는 부분이라 생각하면 좋다.
+    이를 통해 command-line argument로 들어온 부분을 처리하게 된다.
+    +) 추가적으로 sys.argv는 command-line argument를 인수로 가져오며 이를 dataclass로 보낸다.
+    """
+    
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, Seq2SeqTrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
@@ -329,6 +335,7 @@ def main():
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
+    # 이전 버전과의 호환성을 유지하면서 use_auth_token -> token으로 전환
     if model_args.use_auth_token is not None:
         warnings.warn(
             "The `use_auth_token` argument is deprecated and will be removed in v4.34. Please use `token` instead.",
@@ -340,19 +347,22 @@ def main():
 
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
+    # 소프트웨어 사용 정보 수집 및 분석, 사용자의 행동 패턴 파악 등을 위한 방식
     send_example_telemetry("run_summarization", model_args, data_args)
 
-    # Setup logging
+    # Setup logging / 말 그대로 로그를 내보낼 때 활용
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
 
+    # training 중 log 기능을 사용할건지와 관련된 detail
     if training_args.should_log:
         # The default of training_args.log_level is passive, so we set log level at info here to have that default.
         transformers.utils.logging.set_verbosity_info()
 
+    # 로깅을 더 정교하게 설정하는 부분
     log_level = training_args.get_process_log_level()
     logger.setLevel(log_level)
     datasets.utils.logging.set_verbosity(log_level)
@@ -361,12 +371,14 @@ def main():
     transformers.utils.logging.enable_explicit_format()
 
     # Log on each process the small summary:
+    # 각 프로세스에서 주요 학습/평가 매개변수들의 요약 정보를 로깅하는 역할
     logger.warning(
         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}, "
         + f"distributed training: {training_args.parallel_mode.value == 'distributed'}, 16-bits training: {training_args.fp16}"
     )
     logger.info(f"Training/evaluation parameters {training_args}")
 
+    # T5 model을 돌리기 위해서는 source_prefix가 필요하다 (markdown 참조)
     if data_args.source_prefix is None and model_args.model_name_or_path in [
         "google-t5/t5-small",
         "google-t5/t5-base",
@@ -379,6 +391,7 @@ def main():
             "`--source_prefix 'summarize: ' `"
         )
 
+    
     # Detecting last checkpoint.
     last_checkpoint = None
     if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
