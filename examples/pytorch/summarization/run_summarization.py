@@ -391,8 +391,8 @@ def main():
             "`--source_prefix 'summarize: ' `"
         )
 
-    
     # Detecting last checkpoint.
+    # 학습 과정에서 예기치 않은 중단이 발생했을 때 학습을 이어서 진행할 수 있도록 함
     last_checkpoint = None
     if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
         last_checkpoint = get_last_checkpoint(training_args.output_dir)
@@ -439,7 +439,7 @@ def main():
             data_files["test"] = data_args.test_file
             extension = data_args.test_file.split(".")[-1]
         raw_datasets = load_dataset(
-            extension,
+            extension, # 파일 확장자 명시
             data_files=data_files,
             cache_dir=model_args.cache_dir,
             token=model_args.token,
@@ -470,6 +470,8 @@ def main():
     model = AutoModelForSeq2SeqLM.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
+        # ".ckpt"가 포함되어 있으면 True
+        # TensorFlow 체크포인트를 PyTorch 모델로 변환하는 작업을 수행
         config=config,
         cache_dir=model_args.cache_dir,
         revision=model_args.model_revision,
