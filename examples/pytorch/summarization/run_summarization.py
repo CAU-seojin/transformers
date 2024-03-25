@@ -429,6 +429,7 @@ def main():
         )
     else:
         data_files = {}
+        # train / validation / test 를 data_files에 key로 넣어주는 부분
         if data_args.train_file is not None:
             data_files["train"] = data_args.train_file
             extension = data_args.train_file.split(".")[-1]
@@ -481,21 +482,30 @@ def main():
 
     # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
     # on a small vocab and want a smaller embedding size, remove this test.
+    # tokenizer가 다루는 어휘 크기 = embedding layer size (어휘 크기, 임베딩 차원)
+    # AutoTokenizer를 쓰기에 주로 활용되는 부분은 아니나, tokenizer와 embedding간의 관계에 있어서 알아둘 만한 부분이다.
     embedding_size = model.get_input_embeddings().weight.shape[0]
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
+    # 추가적으로 둘의 크기가 같아야 하는 이유는 tokenizer가 만들어주는 특정 단어의 정수 index가 embedding layer에서
+    # 해당 index에 해당하는 embedding vector가 되기에 그렇다.
 
+    # mBART(multilingual BART) 모델을 사용할 때, 각 언어에 따라 적절한 디코더 시작 토큰을 설정
+    # Seq2Seq같이 encoder-decoder에서 decoder의 시작을 명시적으로 알려주기 위해 필요
     if model.config.decoder_start_token_id is None and isinstance(tokenizer, (MBartTokenizer, MBartTokenizerFast)):
         if isinstance(tokenizer, MBartTokenizer):
             model.config.decoder_start_token_id = tokenizer.lang_code_to_id[data_args.lang]
         else:
             model.config.decoder_start_token_id = tokenizer.convert_tokens_to_ids(data_args.lang)
 
+    # decoder start token이 정상적으로 정의되어 있는지 확인 <- 디버깅 및 모델 안정성 확보를 위한 부분
     if model.config.decoder_start_token_id is None:
         raise ValueError("Make sure that `config.decoder_start_token_id` is correctly defined")
 
+    # max_position_embeddings는 모델이 처리할 수 있는 입력 시퀀스의 최대 길이
+    # max_source_length는 dataset에서 입력 시퀀스의 최대 길이 -> 모든 입력 시퀀스를 해당 길이로 잘라내거나 패딩
     if (
-        hasattr(model.config, "max_position_embeddings")
+        hasattr(model.config, "max_position_embeddings") # object 안에 name의 속성이 존재하는지 확인 T/F
         and model.config.max_position_embeddings < data_args.max_source_length
     ):
         if model_args.resize_position_embeddings is None:
@@ -513,11 +523,15 @@ def main():
                 f" `--max_source_length` to {model.config.max_position_embeddings} or to automatically resize the"
                 " model's position encodings by passing `--resize_position_embeddings`."
             )
+    # 결과적으로 모델이 입력 시퀀스 길이에 맞게 처리할 수 있도록 조정해주는 작업
 
+    # --source_prefix "summarize: " \ 와 같이 prefix를 지정해주는 경우를 다루는 부분
     prefix = data_args.source_prefix if data_args.source_prefix is not None else ""
 
     # Preprocessing the datasets.
     # We need to tokenize inputs and targets.
+    # 기본적으로는 데이터셋이 정확하게 입력되었는지를 확인
+    # 여기서 활용되는 column_names는 --text_column text \ --summary_column summary \ 를 통해서 활용됨
     if training_args.do_train:
         if "train" not in raw_datasets:
             raise ValueError("--do_train requires a train dataset")
@@ -534,11 +548,13 @@ def main():
         logger.info("There is nothing to do. Please pass `do_train`, `do_eval` and/or `do_predict`.")
         return
 
+    # 다국어 모델을 다룰 때 필요한 설정을 처리하는 부분
     if isinstance(tokenizer, tuple(MULTILINGUAL_TOKENIZERS)):
-        assert (
+        assert ( # .lang이 명시되어 있지 않다면 오류 메세지
             data_args.lang is not None
         ), f"{tokenizer.__class__.__name__} is a multilingual tokenizer which requires --lang argument"
 
+        # 왜 둘이 같은건지는 모르겠네
         tokenizer.src_lang = data_args.lang
         tokenizer.tgt_lang = data_args.lang
 
@@ -548,7 +564,7 @@ def main():
             tokenizer.lang_code_to_id[data_args.forced_bos_token] if data_args.forced_bos_token is not None else None
         )
         model.config.forced_bos_token_id = forced_bos_token_id
-
+    
     # Get the column names for input/target.
     dataset_columns = summarization_name_mapping.get(data_args.dataset_name, None)
     if data_args.text_column is None:
