@@ -277,7 +277,7 @@ class DataTrainingArguments:
             )
         },
     )
-
+    # class instance가 초기화 된 후, 바로 실행되는 코드 부분
     def __post_init__(self):
         if (
             self.dataset_name is None
@@ -285,7 +285,7 @@ class DataTrainingArguments:
             and self.validation_file is None
             and self.test_file is None
         ):
-            raise ValueError("Need either a dataset name or a training, validation, or test file.")
+            raise ValueError("Need either a set name or a training, validation, or test file.")
         else:
             if self.train_file is not None:
                 extension = self.train_file.split(".")[-1]
@@ -296,6 +296,7 @@ class DataTrainingArguments:
             if self.test_file is not None:
                 extension = self.test_file.split(".")[-1]
                 assert extension in ["csv", "json"], "`test_file` should be a csv or a json file."
+        # 꽤나 중대한 문제다, val_max_target_length가 시작과 함께 확정되기에 target_length를 보다 먼저 처리해야 한다.
         if self.val_max_target_length is None:
             self.val_max_target_length = self.max_target_length
 
@@ -600,6 +601,7 @@ def main():
     def preprocess_function(examples):
         # remove pairs where at least one record is None
 
+        # 먼저 text col/summary col을 inputs/targets로 가져옴
         inputs, targets = [], []
         for i in range(len(examples[text_column])):
             if examples[text_column][i] and examples[summary_column][i]:
@@ -610,20 +612,24 @@ def main():
         model_inputs = tokenizer(inputs, max_length=data_args.max_source_length, padding=padding, truncation=True)
 
         # Tokenize targets with the `text_target` keyword argument
+        # labels라는 말 그대로, input과 함께 제시하기 위해 tokenizer에 넣어줌
         labels = tokenizer(text_target=targets, max_length=max_target_length, padding=padding, truncation=True)
 
         # If we are padding here, replace all tokenizer.pad_token_id in the labels by -100 when we want to ignore
         # padding in the loss.
+        # ignore_pad_token_for_loss가 true되어 있다면 padding을 무시한다는 뜻!
         if padding == "max_length" and data_args.ignore_pad_token_for_loss:
-            labels["input_ids"] = [
-                [(l if l != tokenizer.pad_token_id else -100) for l in label] for label in labels["input_ids"]
-            ]
+            # tokenizer.pad_token_id는 tokenizer가 기본으로 갖고 있는 값
+            labels["input_ids"] = [ 
+                [(l if l != tokenizer.pad_token_id else -100) for l in label] for label in labels["input_ids"]]
+            # -100은 PyTorch에서 ignore_index로 활용됨 -> 손실 계산에서 제외 -> 불필요한 학습 방지!
 
         model_inputs["labels"] = labels["input_ids"]
         return model_inputs
 
     if training_args.do_train:
         train_dataset = raw_datasets["train"]
+        # train set의 일부만 훈련시키고자 할 때, max_train_sample을 활용하게 됨
         if data_args.max_train_samples is not None:
             max_train_samples = min(len(train_dataset), data_args.max_train_samples)
             train_dataset = train_dataset.select(range(max_train_samples))
@@ -631,10 +637,10 @@ def main():
             train_dataset = train_dataset.map(
                 preprocess_function,
                 batched=True,
-                num_proc=data_args.preprocessing_num_workers,
-                remove_columns=column_names,
+                num_proc=data_args.preprocessing_num_workers, # 전처리에 활용할 process 수
+                remove_columns=column_names, # 전처리 전에만 필요한 feature들 제거
                 load_from_cache_file=not data_args.overwrite_cache,
-                desc="Running tokenizer on train dataset",
+                desc="Running tokenizer on train dataset", # 설명 제공
             )
 
     if training_args.do_eval:
