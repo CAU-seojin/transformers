@@ -566,6 +566,7 @@ def main():
         model.config.forced_bos_token_id = forced_bos_token_id
     
     # Get the column names for input/target.
+    # column name을 지정해주는 과정, 기존 dictionary에 없는 경우 input을 받아야 한다.
     dataset_columns = summarization_name_mapping.get(data_args.dataset_name, None)
     if data_args.text_column is None:
         text_column = dataset_columns[0] if dataset_columns is not None else column_names[0]
@@ -588,6 +589,8 @@ def main():
     max_target_length = data_args.max_target_length
     padding = "max_length" if data_args.pad_to_max_length else False
 
+    # label_smoothing은 모델 훈련 시 레이블의 확률 분포를 부드럽게 만드는 기법 -> 특정 레이블의 과한 집중 방지
+    # prepare_decoder_input_ids_from_labels를 필요로 함
     if training_args.label_smoothing_factor > 0 and not hasattr(model, "prepare_decoder_input_ids_from_labels"):
         logger.warning(
             "label_smoothing is enabled but the `prepare_decoder_input_ids_from_labels` method is not defined for "
