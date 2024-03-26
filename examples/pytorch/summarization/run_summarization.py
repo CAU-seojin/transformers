@@ -676,13 +676,17 @@ def main():
             )
 
     # Data collator
+    # 전처리에서도 해줬지만 data_collator에서 한번 더 해주는 부분
+    # 핵심은 배치 단위로 묶어서 처리하고 데이터를 PyTorch 텐서로 변환하여 모델에 입력할 수 있게 해주는 것!
     label_pad_token_id = -100 if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id
     data_collator = DataCollatorForSeq2Seq(
         tokenizer,
         model=model,
         label_pad_token_id=label_pad_token_id,
+        # 배치 내 시퀀스 길이를 맞출 값의 배수 -> fp16의 연산 효율성을 위해 8의 배수로 맞춘다고 하네요
         pad_to_multiple_of=8 if training_args.fp16 else None,
     )
+    # 왜인지는 모르겠으나 batch_size가 없다! no_trainer 코드에는 있는데 대체 이게 무슨일인지...
 
     # Metric
     metric = evaluate.load("rouge", cache_dir=model_args.cache_dir)
