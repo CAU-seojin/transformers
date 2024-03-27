@@ -325,9 +325,21 @@ def main():
     """ 
     parser는 위에서 작성한 @dataclass의 arguments를 채우는 부분이라 생각하면 좋다.
     이를 통해 command-line argument로 들어온 부분을 처리하게 된다.
-    +) 추가적으로 sys.argv는 command-line argument를 인수로 가져오며 이를 dataclass로 보낸다.
+
+    추가적으로 sys.argv는 command-line argument를 인수로 가져오며 이를 dataclass로 보낸다.
+    아래 코드는 .json으로 argument를 입력하는 경우 / 직접 입력하는 경우를 나눈것으로 이해하면 좋다!
     """
     
+    """
+    .py 타입의 코드를 공부하면서 반드시 이해해야할 부분이라고 볼 수 있는데, 
+    HFArgumentParser는 인자로 전달된 dataclass들을 기반으로 동적으로 인수를 parsing한다. (참고로 동일한 field를 서로 갖고 있다면 둘 다 중복으로 적용된다!)
+    
+    각각의 dataclass 안에는 다양한 field가 정의되어 있는데, 우리가 위에서 정의한 dataclass 말고도
+    Seq2SeqTrainingArguments에 특정 field가 정의되어 있다면 parser로 입력하고 또 자연스럽게 argument로 활용 가능하다.
+
+    >>> 아래는 Seq2SeqTrainingArguments에 대한 내용을 담고 있다.
+    https://huggingface.co/docs/transformers/v4.39.1/en/main_classes/trainer#transformers.Seq2SeqTrainingArguments
+    """
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, Seq2SeqTrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
@@ -692,10 +704,13 @@ def main():
     metric = evaluate.load("rouge", cache_dir=model_args.cache_dir)
 
     def postprocess_text(preds, labels):
+        # .strip()으로 공백 제거
         preds = [pred.strip() for pred in preds]
         labels = [label.strip() for label in labels]
 
-        # rougeLSum expects newline after each sentence
+        # NLTK(Natural Language Toolkit)의 sent_tokenize는 텍스트를 문장 단위로 분리
+        # "\n.join()"을 통해 다시 하나의 문자열로 합쳐짐
+        # ROUGE 평가 지표 중 하나인, rougeLSum이 이러한 개행 문자를 필요로 함
         preds = ["\n".join(nltk.sent_tokenize(pred)) for pred in preds]
         labels = ["\n".join(nltk.sent_tokenize(label)) for label in labels]
 
@@ -706,7 +721,10 @@ def main():
         if isinstance(preds, tuple):
             preds = preds[0]
         # Replace -100s used for padding as we can't decode them
+        # np.where(condition, x, y)는 condition에 따라 참이면 x, 거짓이면 y 반환 
+        # 학습에 방해가 되지 않게 -100으로 바꿨던 padding을 다시 pad_token_id로 바꿔놓는 과정
         preds = np.where(preds != -100, preds, tokenizer.pad_token_id)
+        # 다시금 원래대로 decoding 하는 과정 -> 평가지표에서 활용하기 위해서!
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
         labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
@@ -714,8 +732,12 @@ def main():
         # Some simple post-processing
         decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
 
+        # stemming(어간 추출) 활용 -> 단어 변형 및 의미적 유사성에 능동적으로 대처?
         result = metric.compute(predictions=decoded_preds, references=decoded_labels, use_stemmer=True)
+        # 지표의 값을 백분율로 변환하고 소수점 넷째 자리까지 반올림 / k는 각 평가 지표를 나타냄
         result = {k: round(v * 100, 4) for k, v in result.items()}
+        # 생성된 요약 길이에 대한 통계 정보를 제공
+        # 토큰 id 단위로 count를 세기에 단어 수와 유사한 결괏값 <- but, subword tokenizer의 영향으로 차이가 있을 수 있음
         prediction_lens = [np.count_nonzero(pred != tokenizer.pad_token_id) for pred in preds]
         result["gen_len"] = np.mean(prediction_lens)
         return result
@@ -726,6 +748,7 @@ def main():
         if training_args.generation_max_length is not None
         else data_args.val_max_target_length
     )
+    # beam search에서 말하는 beam -> top k의 k를 가리킴 -> 보통 가장 확률이 높은 시퀀스를 말함
     training_args.generation_num_beams = (
         data_args.num_beams if data_args.num_beams is not None else training_args.generation_num_beams
     )
@@ -738,6 +761,7 @@ def main():
         eval_dataset=eval_dataset if training_args.do_eval else None,
         tokenizer=tokenizer,
         data_collator=data_collator,
+        # 기본이 false로 되어 있는듯? arg 입력할 떄 바꿔줘야할듯!
         compute_metrics=compute_metrics if training_args.predict_with_generate else None,
     )
 
@@ -748,6 +772,7 @@ def main():
             checkpoint = training_args.resume_from_checkpoint
         elif last_checkpoint is not None:
             checkpoint = last_checkpoint
+        # .train을 통해 학습 수행
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
         trainer.save_model()  # Saves the tokenizer too for easy upload
 
@@ -755,8 +780,10 @@ def main():
         max_train_samples = (
             data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
         )
+        # 실제로 사용된 학습 sample의 수를 저장
         metrics["train_samples"] = min(max_train_samples, len(train_dataset))
 
+        # trainer의 save들은 기본적으로는 output_dir에 저장된다 (다만 해당 코드에서는 지정되지 않은 듯?)
         trainer.log_metrics("train", metrics)
         trainer.save_metrics("train", metrics)
         trainer.save_state()
