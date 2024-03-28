@@ -792,16 +792,21 @@ def main():
     results = {}
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
+        # 평가 데이터셋이 딕셔너리 형태인 경우, 각 데이터셋에 대해 개별적으로 평가 수행
         if isinstance(eval_dataset, dict):
             metrics = {}
             for eval_ds_name, eval_ds in eval_dataset.items():
+                # prefix도 추가로 붙여준다
                 dataset_metrics = trainer.evaluate(eval_dataset=eval_ds, metric_key_prefix=f"eval_{eval_ds_name}")
                 metrics.update(dataset_metrics)
         else:
             metrics = trainer.evaluate(metric_key_prefix="eval")
+        
+        # 평가 샘플 수 계산 후 저장
         max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
         metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
 
+        # 평가 지표 로깅 및 파일로 저장
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
 
@@ -818,6 +823,7 @@ def main():
         trainer.log_metrics("predict", metrics)
         trainer.save_metrics("predict", metrics)
 
+        # world process zero = master process 에서만 작업이 일어나도록 하는 과정
         if trainer.is_world_process_zero():
             if training_args.predict_with_generate:
                 predictions = predict_results.predictions
@@ -825,11 +831,14 @@ def main():
                 predictions = tokenizer.batch_decode(
                     predictions, skip_special_tokens=True, clean_up_tokenization_spaces=True
                 )
+                # 디코딩 된 예측 결과를 읽기 쉽게 공백 제거용 .strip까지 해주는 과정
                 predictions = [pred.strip() for pred in predictions]
+                # 거기다가 파일로 까지 마련해주는 센스
                 output_prediction_file = os.path.join(training_args.output_dir, "generated_predictions.txt")
                 with open(output_prediction_file, "w") as writer:
                     writer.write("\n".join(predictions))
 
+    # kwargs = "Key Words ArGumentS "
     kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "summarization"}
     if data_args.dataset_name is not None:
         kwargs["dataset_tags"] = data_args.dataset_name
@@ -843,13 +852,15 @@ def main():
         kwargs["language"] = data_args.lang
 
     if training_args.push_to_hub:
+        # kwargs를 포함하여 학습한 모델을 업로드함
         trainer.push_to_hub(**kwargs)
     else:
+        # 그 외의 경우에는 모델 카드를 만들어서 설명/사용방법/성능지표 등을 전달함
         trainer.create_model_card(**kwargs)
 
     return results
 
-
+# TPU에서 활용되는 함수인듯
 def _mp_fn(index):
     # For xla_spawn (TPUs)
     main()
