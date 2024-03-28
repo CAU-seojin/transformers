@@ -51,10 +51,6 @@ from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, is_offline_mode, send_example_telemetry
 from transformers.utils.versions import require_version
 
-# wandb로 학습 추적
-import wandb
-wandb.login()
-
 # Name the project
 import os
 os.environ["WANDB_PROJECT"]="summarization_baseline"
@@ -875,6 +871,3 @@ def _mp_fn(index):
 
 if __name__ == "__main__":
     main()
-    
-    # 마지막에 wandb 추적 마무리
-    wandb.finish()
