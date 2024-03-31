@@ -55,9 +55,6 @@ from transformers.utils.versions import require_version
 import wandb
 # Be careful not to be exposed by someone!
 os.environ['WANDB_AUTH_KEY']='a709402e62ee3e8fe538390d4f182e4dc46d5651'
-from dotenv import load_dotenv
-
-load_dotenv()
 WANDB_AUTH_KEY = os.getenv('WANDB_AUTH_KEY')
 wandb.login(key=WANDB_AUTH_KEY)
 
