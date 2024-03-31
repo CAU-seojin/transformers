@@ -51,12 +51,25 @@ from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, is_offline_mode, send_example_telemetry
 from transformers.utils.versions import require_version
 
+# wandb 도입!
+import wandb
+# Be careful not to be exposed by someone!
+os.environ['WANDB_AUTH_KEY']='a709402e62ee3e8fe538390d4f182e4dc46d5651'
+from dotenv import load_dotenv
+
+load_dotenv()
+WANDB_AUTH_KEY = os.getenv('WANDB_AUTH_KEY')
+wandb.login(key=WANDB_AUTH_KEY)
+
+# json / jsonl / csv 형태로 들어오는 dataset 처리
+import pandas as pd
+
 # Name the project
 import os
 os.environ["WANDB_PROJECT"]="summarization_baseline"
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.40.0.dev0")
+# check_min_version("4.40.0.dev0") <- 이 버전이 없는데?
 
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/summarization/requirements.txt")
 
@@ -280,6 +293,8 @@ class DataTrainingArguments:
             )
         },
     )
+
+
     # class instance가 초기화 된 후, 바로 실행되는 코드 부분
     def __post_init__(self):
         if (
@@ -300,8 +315,33 @@ class DataTrainingArguments:
                 extension = self.test_file.split(".")[-1]
                 assert extension in ["csv", "json"], "`test_file` should be a csv or a json file."
         # 꽤나 중대한 문제다, val_max_target_length가 시작과 함께 확정되기에 target_length를 보다 먼저 처리해야 한다.
+        # 그렇기에 length를 찾는 함수를 추가로 정의해서 대입하겠다.
         if self.val_max_target_length is None:
             self.val_max_target_length = self.max_target_length
+
+# 특정 데이터셋에서 source / target length를 다뤄줄 함수
+def cal_length(dataset_name):
+    df = pd.read_json(dataset_name, lines = True)
+
+    # 문장 길이 계산
+    df['length_article'] = df['article'].apply(lambda x: len(x.split()))
+    df['length_laysum'] = df['lay_summary'].apply(lambda x: len(x.split()))
+
+    # NumPy 배열로 변환
+    length_article = df['length_article'].values
+    length_laysum = df['lay_summary'].values
+
+    # article -> 평균과 표준편차, 이로 인한 source_length
+    mean_length_article = np.mean(length_article)
+    std_length_article = np.std(length_article)
+    input_source_length = int(mean_length_article + 2 * std_length_article)
+
+    # laysum -> 평균과 표준편차, 이를 통한 target_length
+    mean_length_laysum = np.mean(length_laysum)
+    std_length_laysum = np.std(length_laysum)
+    input_target_length = int(mean_length_laysum + 2 * std_length_laysum)
+
+    return input_source_length, input_target_length
 
 
 summarization_name_mapping = {
@@ -517,6 +557,13 @@ def main():
     # decoder start token이 정상적으로 정의되어 있는지 확인 <- 디버깅 및 모델 안정성 확보를 위한 부분
     if model.config.decoder_start_token_id is None:
         raise ValueError("Make sure that `config.decoder_start_token_id` is correctly defined")
+
+    # -----------------------------------------------------------------------------------------
+    # max_source_length / max_target_length / val_max_target_length 를 처리해주는 부분
+    # 교수님이 말씀하신 2 sigma로 간다.
+    data_args.max_source_length, data_args.max_target_length = cal_length(data_args.train_file)
+    data_args.val_max_target_length = data_args.max_target_length
+    # -----------------------------------------------------------------------------------------
 
     # max_position_embeddings는 모델이 처리할 수 있는 입력 시퀀스의 최대 길이
     # max_source_length는 dataset에서 입력 시퀀스의 최대 길이 -> 모든 입력 시퀀스를 해당 길이로 잘라내거나 패딩
@@ -871,3 +918,6 @@ def _mp_fn(index):
 
 if __name__ == "__main__":
     main()
+
+    # wandb 끝내기 -> script 방식에서는 필요 없을수도?
+    wandb.finish()
