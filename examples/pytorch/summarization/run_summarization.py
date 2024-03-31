@@ -307,13 +307,13 @@ class DataTrainingArguments:
         else:
             if self.train_file is not None:
                 extension = self.train_file.split(".")[-1]
-                assert extension in ["csv", "json"], "`train_file` should be a csv or a json file."
+                assert extension in ["csv", "json", "jsonl"], "`train_file` should be a csv , a json file or a jsonl."
             if self.validation_file is not None:
                 extension = self.validation_file.split(".")[-1]
-                assert extension in ["csv", "json"], "`validation_file` should be a csv or a json file."
+                assert extension in ["csv", "json", "jsonl"], "`validation_file` should be a csv , a json file or a jsonl."
             if self.test_file is not None:
                 extension = self.test_file.split(".")[-1]
-                assert extension in ["csv", "json"], "`test_file` should be a csv or a json file."
+                assert extension in ["csv", "json", "jsonl"], "`test_file` should be a csv , a json file or a jsonl."
         # 꽤나 중대한 문제다, val_max_target_length가 시작과 함께 확정되기에 target_length를 보다 먼저 처리해야 한다.
         # 그렇기에 length를 찾는 함수를 추가로 정의해서 대입하겠다.
         if self.val_max_target_length is None:
@@ -496,7 +496,7 @@ def main():
             data_files["test"] = data_args.test_file
             extension = data_args.test_file.split(".")[-1]
         raw_datasets = load_dataset(
-            extension = 'json' if extension is 'jsonl' else extension, # 파일 확장자 명시
+            extension = 'json' if extension == 'jsonl' else extension, # 파일 확장자 명시
             data_files=data_files,
             cache_dir=model_args.cache_dir,
             token=model_args.token,
