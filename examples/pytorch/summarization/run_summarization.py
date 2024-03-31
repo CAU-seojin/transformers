@@ -496,7 +496,7 @@ def main():
             data_files["test"] = data_args.test_file
             extension = data_args.test_file.split(".")[-1]
         raw_datasets = load_dataset(
-            extension, # 파일 확장자 명시
+            extension = 'json' if extension is 'jsonl' else extension, # 파일 확장자 명시
             data_files=data_files,
             cache_dir=model_args.cache_dir,
             token=model_args.token,
